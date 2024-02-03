@@ -15,39 +15,47 @@ SIZE = 2**25
 DIMS = 3072
 TEXT_SIZE = 26
 
-client = OpenAI()
 cl100k = cl100k_base()
 
 tokens: set[bytes] = set(i[:TEXT_SIZE] for i in cl100k["mergeable_ranks"].keys())
 tokens.update(b"<|endoftext|>")
 
-embed_to_token: np.ndarray = np.ndarray((SIZE,), dtype=f"|S{TEXT_SIZE}")
-embeddings = np.ndarray((len(tokens), DIMS), dtype=np.float64)
+def normalize(embed: np.ndarray) -> np.ndarray:
+    norm = np.linalg.norm(embed)
+    if norm > 0:
+        embed /= norm
+    return embed
 
-intermediate:list[list[str]] = []
-current = []
-for i in tokens:
-    if len(current) >= 512:
-        intermediate.append(current)
-        current = []
-    current.append(str(i))
+if __name__ == "__main__":
 
-amount_done = 0
+    client = OpenAI()
 
-for idx, token_list in enumerate(intermediate):
-    print(f"{amount_done=}")
-    for token, embedding_data in zip(token_list, client.embeddings.create(
-            model="text-embedding-3-large", dimensions=DIMS, input=token_list
-        )
-        .data):
-        embedding = np.array(embedding_data.embedding, dtype=np.float64)
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding /= norm
-        embed_to_token[hashEmbed(embedding)] = token
-        embeddings[idx] = embedding
-        amount_done += 1
+    embed_to_token: np.ndarray = np.ndarray((SIZE,), dtype=f"|S{TEXT_SIZE}")
+    embeddings = np.ndarray((len(tokens), DIMS), dtype=np.float64)
+
+    intermediate:list[list[str]] = []
+    current = []
+    for i in tokens:
+        if len(current) >= 1024:
+            intermediate.append(current)
+            current = []
+        current.append(str(i))
+    intermediate.append(current)
+
+    amount_done = 0
+
+    for idx, token_list in enumerate(intermediate):
+        print(amount_done)
+        for token, embedding_data in zip(token_list, client.embeddings.create(
+                model="text-embedding-3-large", dimensions=DIMS, input=token_list
+            )
+            .data):
+            embedding = np.array(embedding_data.embedding, dtype=np.float64)
+            embedding = normalize(embedding)
+            embed_to_token[hashEmbed(embedding)] = token
+            embeddings[amount_done] = embedding
+            amount_done += 1
 
 
-np.save("embed_to_token.npy", embed_to_token)
-np.save("embeddings.npy", embeddings)
+    np.save("embed_to_token.npy", embed_to_token)
+    np.save("embeddings.npy", embeddings)
